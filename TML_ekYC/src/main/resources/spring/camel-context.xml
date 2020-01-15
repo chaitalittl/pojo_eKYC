@@ -1,0 +1,476 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:cxf="http://camel.apache.org/schema/cxf"
+    xmlns:util="http://www.springframework.org/schema/util"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="          http://www.springframework.org/schema/beans           http://www.springframework.org/schema/beans/spring-beans.xsd     http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd       http://camel.apache.org/schema/cxf           http://camel.apache.org/schema/cxf/camel-cxf.xsd                http://camel.apache.org/schema/spring                 http://camel.apache.org/schema/spring/camel-spring.xsd">
+    <!-- <beans xmlns="http://www.springframework.org/schema/beans" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
+		xmlns:util="http://www.springframework.org/schema/util" xsi:schemaLocation=" 
+		http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans.xsd 
+		http://www.springframework.org/schema/util http://www.springframework.org/schema/util/spring-util.xsd 
+		http://camel.apache.org/schema/spring http://camel.apache.org/schema/spring/camel-spring.xsd"> -->
+    <util:map id="myMap">
+        <entry key="http://www.w3.org/2003/05/soap-envelope" value="soap"/>
+        <!-- we dont want any prefix for our namespace -->
+        <entry key="http://www.mycompany.com/foo/2" value=""/>
+    </util:map>
+    <!-- setting up a Camel CXF web-service -->
+    <cxf:cxfEndpoint address="http://localhost:8099/tmleKYC"
+        id="tmleKYC" serviceClass="com.tml.crm.KYCService">
+        <cxf:properties>
+            <entry key="dataFormat" value="MESSAGE"/>
+        </cxf:properties>
+    </cxf:cxfEndpoint>
+    <cxf:rsClient address="https://testapi.karza.in/v2/tan" id="rsAPI" loggingFeatureEnabled="true"/>
+    <cxf:rsClient address="https://testapi.karza.in/v3/name"
+        id="rsNameAPI" loggingFeatureEnabled="true"/>
+    <cxf:rsClient address="https://testapi.karza.in/v2/rc" id="rsRCAPI" loggingFeatureEnabled="true"/>
+    <!-- Camel Context Start -->
+    <camelContext id="camel" streamCache="true"
+        xmlns="http://camel.apache.org/schema/spring" xmlns:org="http://com.tml.crm/">
+        <dataFormats>
+            <jaxb contextPath="com.tml.crm" id="xml"
+                namespacePrefixRef="myMap" objectFactory="true" prettyPrint="true"/>
+            <json id="json" library="Jackson" unmarshalTypeName="com.tml.crm.KYCOutput"/>
+        </dataFormats>
+        <route id="RT_1_TML_eKYC">
+            <from id="_from1" uri="cxf:bean:tmleKYC"/>
+            <log id="_log1" message="Request Recived from User____${body}"/>
+            <setHeader headerName="pDOC_TYPE" id="_setHeader1">
+                <xpath resultType="java.lang.String">//pDOC_TYPE/text()</xpath>
+            </setHeader>
+            <log id="_log5" message="Doctype_No____${header.pDOC_TYPE}"/>
+            <choice id="_choice3">
+                <when id="_when1">
+                    <simple>${header.pDOC_TYPE} == 'TAN'</simple>
+                    <log id="_log7" message="Calling TAN EKYC API"/>
+                    <to id="_to1" uri="direct:tanAPICall"/>
+                </when>
+                <when id="_when6">
+                    <simple>${header.pDOC_TYPE} == 'VEHICLE RC'</simple>
+                    <log id="_log10" message="Calling RC EKYC API"/>
+                    <to id="_to2" uri="direct:rcAPICall"/>
+                </when>
+                <otherwise id="_otherwise2">
+                    <setBody id="_setBody2">
+                        <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;&lt;/request_id&gt;
+   &lt;result&gt;Please Check Document Type&lt;/result&gt;
+   &lt;statusCode&gt;&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                    </setBody>
+                </otherwise>
+            </choice>
+            <log id="_log2" message="Response send to CRM_______ ${body}"/>
+        </route>
+        <route id="RT_2_TAN_API">
+            <from id="_from2" uri="direct:tanAPICall"/>
+            <doTry id="_doTry1">
+                <setHeader headerName="pDOCUMENT_NO" id="_setHeader2">
+                    <xpath resultType="java.lang.String">//pDOCUMENT_NO//text()</xpath>
+                </setHeader>
+                <setHeader headerName="pCONSENT" id="_setHeader3">
+                    <xpath resultType="java.lang.String">//pCONSENT//text()</xpath>
+                </setHeader>
+                <setHeader headerName="pFULL_NAME" id="_setHeader6">
+                    <xpath resultType="java.lang.String">//pFULL_NAME//text()</xpath>
+                </setHeader>
+                <setBody id="_setBody1">
+                    <simple>{"tan":"${header.pDOCUMENT_NO}", "consent":"${header.pCONSENT}"}</simple>
+                </setBody>
+                <!-- <to id="_to2" uri="mock:ekYC"/> -->
+                <setHeader headerName="Content-Type" id="_setHeader4">
+                    <constant>application/json</constant>
+                </setHeader>
+                <!-- <to id="rsTESTAPI" uri="cxfrs:bean:rsAPI?bridgeErrorHandler&amp;throwsExceptionOnFailure=false"/> -->
+                <!-- <unmarshal id="_unmarshal1" ref="json" /> -->
+                <setHeader headerName="x-karza-key" id="_setHeader5">
+                    <constant>9qvf2X7URXTSfuvficjh</constant>
+                </setHeader>
+                <log id="_log3" message="Request Send to eKYC TAN API_____ ${body}"/>
+                <to id="_to3" pattern="InOut" uri="cxfrs:bean:rsAPI?throwExceptionOnFailure=false"/>
+                <!-- <marshal id="_marshal1" ref="xml" /> -->
+                <log id="_log4" message="Response from eKYC API_____ ${body}"/>
+                <log id="_log8" message="HTTPS Header Value_____${header.CamelHttpResponseCode}"/>
+                <choice id="_choice1">
+                    <when id="_when2">
+                        <simple>${header.CamelHttpResponseCode} == '200'</simple>
+                        <setHeader headerName="status-code" id="_setHeader7">
+                            <jsonpath>$.status-code</jsonpath>
+                        </setHeader>
+                        <setHeader headerName="request_id" id="_setHeader8">
+                            <jsonpath>$.request_id</jsonpath>
+                        </setHeader>
+                        <log id="_log6" message="Status Code ___${header.status-code}"/>
+                        <choice id="_choice2">
+                            <when id="_when3">
+                                <simple>${header.status-code} == '101'</simple>
+                                <setHeader headerName="result_name" id="_setHeader9">
+                                    <jsonpath>$.result.name</jsonpath>
+                                </setHeader>
+                                <setBody id="_setBody3">
+                                    <simple>{"name1":"${header.pFULL_NAME}", "name2":"${header.result_name}", "type":"individual", "preset":"l"}</simple>
+                                </setBody>
+                                <to id="_to5" uri="direct:nameAPICall"/>
+                                <log id="_log23" message="before unmarshal in name match_____ ${body}"/>
+                                <unmarshal id="_unmarshal1" ref="json"/>
+                                <log id="_log24" message="before marshal in name match_____ ${body}"/>
+                                <marshal id="_marshal1" ref="xml"/>
+                                <log id="_log25" message="after marshal in name match_____ ${body}"/>
+                                <!-- <setBody id="_setBody4">
+                                    <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;
+      &lt;name&gt;${header.result_name}&lt;/name&gt;
+   &lt;/result&gt;
+   &lt;statusCode&gt;${header.status-code}&lt;/statusCode&gt;
+   &lt;score&gt;${header.resultScore}&lt;/score&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                                </setBody> -->
+                            </when>
+                            <otherwise id="_otherwise1">
+                                <setBody id="_setBody5">
+                                    <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;&lt;/result&gt;
+   &lt;statusCode&gt;${header.status-code}&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                                </setBody>
+                            </otherwise>
+                        </choice>
+                    </when>
+                    <when id="_when4">
+                        <simple>${header.CamelHttpResponseCode} == '401'</simple>
+                        <setBody id="_setBody6">
+                            <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;Authentication Required&lt;/result&gt;
+   &lt;statusCode&gt;${header.status-code}&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                        </setBody>
+                    </when>
+                    <when id="_when5">
+                        <simple>${header.CamelHttpResponseCode} == '403'</simple>
+                        <setBody id="_setBody7">
+                            <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;Missing Authentication Token&lt;/result&gt;
+   &lt;statusCode&gt;${header.status-code}&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                        </setBody>
+                    </when>
+                    <when id="_when7">
+                        <simple>${header.CamelHttpResponseCode} == '504'</simple>
+                        <setBody id="_setBody8">
+                            <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;Gateway Timed Out&lt;/result&gt;
+   &lt;statusCode&gt;${header.status-code}&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                        </setBody>
+                    </when>
+                </choice>
+                <log id="_log9" message="Response send to User_____ ${body}"/>
+                <doCatch id="_doCatch1">
+                    <exception>java.lang.Exception</exception>
+                    <log id="_log12" message="Exception Occurred_${exception.stacktrace}"/>
+                    <setBody id="_setBody9">
+                        <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;Exception Occured&lt;/result&gt;
+   &lt;statusCode&gt;1&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                    </setBody>
+                </doCatch>
+            </doTry>
+        </route>
+        <!-- start of RC API -->
+        <route id="RT_3_RC_API">
+            <from id="_from2" uri="direct:rcAPICall"/>
+            <doTry id="_doTry2">
+                <setHeader headerName="pDOCUMENT_NO" id="_setHeader10">
+                    <xpath resultType="java.lang.String">//pDOCUMENT_NO//text()</xpath>
+                </setHeader>
+                <setHeader headerName="pCONSENT" id="_setHeader11">
+                    <xpath resultType="java.lang.String">//pCONSENT//text()</xpath>
+                </setHeader>
+                <setHeader headerName="pFULL_NAME" id="_setHeader12">
+                    <xpath resultType="java.lang.String">//pFULL_NAME//text()</xpath>
+                </setHeader>
+                <setBody id="_setBody10">
+                    <simple>{"consent":"${header.pCONSENT}","reg_no":"${header.pDOCUMENT_NO}"}</simple>
+                </setBody>
+                <setHeader headerName="Content-Type" id="_setHeader13">
+                    <constant>application/json</constant>
+                </setHeader>
+                <setHeader headerName="x-karza-key" id="_setHeader14">
+                    <constant>9qvf2X7URXTSfuvficjh</constant>
+                </setHeader>
+                <log id="_log13" message="Request Send to eKYC RC API_____ ${body}"/>
+                <to id="_to4" pattern="InOut" uri="cxfrs:bean:rsRCAPI?throwExceptionOnFailure=false"/>
+                <!-- <marshal id="_marshal1" ref="xml" /> -->
+                <log id="_log14" message="Response from eKYC RC API_____ ${body}"/>
+                <log id="_log11" message="HTTPS Header Value_____${header.CamelHttpResponseCode}"/>
+                <choice id="_choice4">
+                    <when id="_when8">
+                        <simple>${header.CamelHttpResponseCode} == '200'</simple>
+                        <setHeader headerName="status-code" id="_setHeader15">
+                            <jsonpath>$.status-code</jsonpath>
+                        </setHeader>
+                        <setHeader headerName="request_id" id="_setHeader16">
+                            <jsonpath>$.request_id</jsonpath>
+                        </setHeader>
+                        <log id="_log15" message="Status Code ___${header.status-code}"/>
+                        <choice id="_choice5">
+                            <when id="_when9">
+                                <simple>${header.status-code} == '101'</simple>
+                                <setHeader headerName="request_id" id="_setHeader16">
+                                    <jsonpath>$.request_id</jsonpath>
+                                </setHeader>
+                                <setHeader
+                                    headerName="rc_body_type_desc" id="_setHeader17">
+                                    <jsonpath>$.result.rc_body_type_desc</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_chasi_no" id="_setHeader18">
+                                    <jsonpath>$.result.rc_chasi_no</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_color" id="_setHeader19">
+                                    <jsonpath>$.result.rc_color</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_cubic_cap" id="_setHeader20">
+                                    <jsonpath>$.result.rc_cubic_cap</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_eng_no" id="_setHeader21">
+                                    <jsonpath>$.result.rc_eng_no</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_f_name" id="_setHeader22">
+                                    <jsonpath>$.result.rc_f_name</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_financer" id="_setHeader23">
+                                    <jsonpath>$.result.rc_financer</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_fit_upto" id="_setHeader24">
+                                    <jsonpath>$.result.rc_fit_upto</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_fuel_desc" id="_setHeader25">
+                                    <jsonpath>$.result.rc_fuel_desc</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_gvw" id="_setHeader26">
+                                    <jsonpath>$.result.rc_gvw</jsonpath>
+                                </setHeader>
+                                <setHeader
+                                    headerName="rc_insurance_comp" id="_setHeader27">
+                                    <jsonpath>$.result.rc_insurance_comp</jsonpath>
+                                </setHeader>
+                                <setHeader
+                                    headerName="rc_insurance_policy_no" id="_setHeader28">
+                                    <jsonpath>$.result.rc_insurance_policy_no</jsonpath>
+                                </setHeader>
+                                <setHeader
+                                    headerName="rc_insurance_upto" id="_setHeader29">
+                                    <jsonpath>$.result.rc_insurance_upto</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_maker_desc" id="_setHeader30">
+                                    <jsonpath>$.result.rc_maker_desc</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_maker_model" id="_setHeader31">
+                                    <jsonpath>$.result.rc_maker_model</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_manu_month_yr" id="_setHeader32">
+                                    <jsonpath>$.result.rc_manu_month_yr</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_mobile_no" id="_setHeader33">
+                                    <jsonpath>$.result.rc_mobile_no</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_no_cyl" id="_setHeader34">
+                                    <jsonpath>$.result.rc_no_cyl</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_norms_desc" id="_setHeader35">
+                                    <jsonpath>$.result.rc_norms_desc</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_owner_name" id="_setHeader36">
+                                    <jsonpath>$.result.rc_owner_name</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_owner_sr" id="_setHeader37">
+                                    <jsonpath>$.result.rc_owner_sr</jsonpath>
+                                </setHeader>
+                                <setHeader
+                                    headerName="rc_permanent_address" id="_setHeader38">
+                                    <jsonpath>$.result.rc_permanent_address</jsonpath>
+                                </setHeader>
+                                <setHeader
+                                    headerName="rc_present_address" id="_setHeader39">
+                                    <jsonpath>$.result.rc_present_address</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_registered_at" id="_setHeader40">
+                                    <jsonpath>$.result.rc_registered_at</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_regn_dt" id="_setHeader41">
+                                    <jsonpath>$.result.rc_regn_dt</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_regn_no" id="_setHeader42">
+                                    <jsonpath>$.result.rc_regn_no</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_seat_cap" id="_setHeader43">
+                                    <jsonpath>$.result.rc_seat_cap</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_sleeper_cap" id="_setHeader44">
+                                    <jsonpath>$.result.rc_sleeper_cap</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_stand_cap" id="_setHeader45">
+                                    <jsonpath>$.result.rc_stand_cap</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_status_as_on" id="_setHeader46">
+                                    <jsonpath>$.result.rc_status_as_on</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_tax_upto" id="_setHeader47">
+                                    <jsonpath>$.result.rc_tax_upto</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_unld_wt" id="_setHeader48">
+                                    <jsonpath>$.result.rc_unld_wt</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_vch_catg" id="_setHeader49">
+                                    <jsonpath>$.result.rc_vch_catg</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_vh_class_desc" id="_setHeader50">
+                                    <jsonpath>$.result.rc_vh_class_desc</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="rc_wheelbase" id="_setHeader51">
+                                    <jsonpath>$.result.rc_wheelbase</jsonpath>
+                                </setHeader>
+                                <setHeader headerName="stautsMessage" id="_setHeader52">
+                                    <jsonpath>$.result.stautsMessage</jsonpath>
+                                </setHeader>
+                                <setBody id="_setBody11">
+                                    <simple>{"name1":"${header.pFULL_NAME}", "name2":"${header.rc_owner_name}", "type":"individual", "preset":"l"}</simple>
+                                </setBody>
+                                <to id="_to6" uri="direct:nameAPICall"/>
+                                <setBody id="_setBody12">
+                                    <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;
+      &lt;rc_body_type_desc&gt;${header.rc_body_type_desc}&lt;/rc_body_type_desc&gt;
+ &lt;rc_chasi_no&gt;${header.rc_chasi_no}&lt;/rc_chasi_no&gt;
+ &lt;rc_color&gt;${header.rc_color}&lt;/rc_color&gt;
+ &lt;rc_cubic_cap&gt;${header.rc_cubic_cap}&lt;/rc_cubic_cap&gt;
+ &lt;rc_eng_no&gt;${header.rc_eng_no}&lt;/rc_eng_no&gt;
+ &lt;rc_f_name&gt;${header.rc_f_name}&lt;/rc_f_name&gt;
+ &lt;rc_financer&gt;${header.rc_financer}&lt;/rc_financer&gt;
+ &lt;rc_fit_upto&gt;${header.rc_fit_upto}&lt;/rc_fit_upto&gt;
+ &lt;rc_fuel_desc&gt;${header.rc_fuel_desc}&lt;/rc_fuel_desc&gt;
+ &lt;rc_gvw&gt;${header.rc_gvw}&lt;/rc_gvw&gt;
+ &lt;rc_insurance_comp&gt;${header.rc_insurance_comp}&lt;/rc_insurance_comp&gt;
+ &lt;rc_insurance_policy_no&gt;${header.rc_insurance_policy_no}&lt;/rc_insurance_policy_no&gt;
+ &lt;rc_insurance_upto&gt;${header.rc_insurance_upto}&lt;/rc_insurance_upto&gt;
+ &lt;rc_maker_desc&gt;${header.rc_maker_desc}&lt;/rc_maker_desc&gt;
+ &lt;rc_maker_model&gt;${header.rc_maker_model}&lt;/rc_maker_model&gt;
+ &lt;rc_manu_month_yr&gt;${header.rc_manu_month_yr}&lt;/rc_manu_month_yr&gt;
+ &lt;rc_mobile_no&gt;${header.rc_mobile_no}&lt;/rc_mobile_no&gt;
+ &lt;rc_no_cyl&gt;${header.rc_no_cyl}&lt;/rc_no_cyl&gt;
+ &lt;rc_norms_desc&gt;${header.rc_norms_desc}&lt;/rc_norms_desc&gt;
+ &lt;rc_owner_name&gt;${header.rc_owner_name}&lt;/rc_owner_name&gt;
+ &lt;rc_owner_sr&gt;${header.rc_owner_sr}&lt;/rc_owner_sr&gt;
+ &lt;rc_permanent_address&gt;${header.rc_permanent_address}&lt;/rc_permanent_address&gt;
+ &lt;rc_present_address&gt;${header.rc_present_address}&lt;/rc_present_address&gt;
+ &lt;rc_registered_at&gt;${header.rc_registered_at}&lt;/rc_registered_at&gt;
+ &lt;rc_regn_dt&gt;${header.rc_regn_dt}&lt;/rc_regn_dt&gt;
+ &lt;rc_regn_no&gt;${header.rc_regn_no}&lt;/rc_regn_no&gt;
+ &lt;rc_seat_cap&gt;${header.rc_seat_cap}&lt;/rc_seat_cap&gt;
+ &lt;rc_sleeper_cap&gt;${header.rc_sleeper_cap}&lt;/rc_sleeper_cap&gt;
+ &lt;rc_stand_cap&gt;${header.rc_stand_cap}&lt;/rc_stand_cap&gt;
+ &lt;rc_status_as_on&gt;${header.rc_status_as_on}&lt;/rc_status_as_on&gt;
+ &lt;rc_tax_upto&gt;${header.rc_tax_upto}&lt;/rc_tax_upto&gt;
+ &lt;rc_unld_wt&gt;${header.rc_unld_wt}&lt;/rc_unld_wt&gt;
+ &lt;rc_vch_catg&gt;${header.rc_vch_catg}&lt;/rc_vch_catg&gt;
+ &lt;rc_vh_class_desc&gt;${header.rc_vh_class_desc}&lt;/rc_vh_class_desc&gt;
+ &lt;rc_wheelbase&gt;${header.rc_wheelbase}&lt;/rc_wheelbase&gt;
+ &lt;stautsMessage&gt;${header.stautsMessage}&lt;stautsMessage&gt;
+   &lt;/result&gt;
+   &lt;statusCode&gt;${header.statusCode}&lt;/statusCode&gt;
+   &lt;score&gt;${header.resultScore}&lt;/score&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                                </setBody>
+                            </when>
+                            <otherwise id="_otherwise3">
+                                <setBody id="_setBody13">
+                                    <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;&lt;/result&gt;
+   &lt;statusCode&gt;${header.status-code}&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                                </setBody>
+                            </otherwise>
+                        </choice>
+                    </when>
+                    <when id="_when10">
+                        <simple>${header.CamelHttpResponseCode} == '401'</simple>
+                        <setBody id="_setBody14">
+                            <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;Authentication Required&lt;/result&gt;
+   &lt;statusCode&gt;${header.status-code}&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                        </setBody>
+                    </when>
+                    <when id="_when11">
+                        <simple>${header.CamelHttpResponseCode} == '403'</simple>
+                        <setBody id="_setBody15">
+                            <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;Missing Authentication Token&lt;/result&gt;
+   &lt;statusCode&gt;${header.status-code}&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                        </setBody>
+                    </when>
+                    <when id="_when12">
+                        <simple>${header.CamelHttpResponseCode} == '504'</simple>
+                        <setBody id="_setBody16">
+                            <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;Gateway Timed Out&lt;/result&gt;
+   &lt;statusCode&gt;${header.status-code}&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                        </setBody>
+                    </when>
+                </choice>
+                <log id="_log16" message="Response send to User_____ ${body}"/>
+                <doCatch id="_doCatch2">
+                    <exception>java.lang.Exception</exception>
+                    <log id="_log17" message="Exception Occurred_${exception.stacktrace}"/>
+                    <setBody id="_setBody17">
+                        <simple>&lt;ns2:eKYCResponse xmlns:ns2="http://schemas.xmlsoap.org/soap/envelope/"&gt;
+   &lt;request_id&gt;${header.request_id}&lt;/request_id&gt;
+   &lt;result&gt;Exception Occured&lt;/result&gt;
+   &lt;statusCode&gt;1&lt;/statusCode&gt;
+&lt;/ns2:eKYCResponse&gt;</simple>
+                    </setBody>
+                </doCatch>
+            </doTry>
+        </route>
+        <!-- end of RC API -->
+        <route id="_route1">
+            <from id="_from3" uri="direct:nameAPICall"/>
+            <log id="_log18" message="Request recived for Name API__${body}"/>
+            <to id="_to7" uri="cxfrs:bean:rsNameAPI?throwExceptionOnFailure=false"/>
+            <log id="_log19" message="response recived from Name API__${body}"/>
+            <setHeader headerName="statusCode" id="_setHeader53">
+                <jsonpath>$.statusCode</jsonpath>
+            </setHeader>
+            <log id="_log20" message="response recived from Name API__${header.statusCode}"/>
+            <choice id="_choice6">
+                <when id="_when13">
+                    <simple>${header.statusCode} == '101'</simple>
+                    <setHeader headerName="resultScore" id="_setHeader54">
+                        <jsonpath>$.result.score</jsonpath>
+                    </setHeader>
+                </when>
+                <otherwise id="_otherwise4">
+                    <setHeader headerName="resultScore" id="_setHeader55">
+                        <simple>Result code received is ${header.statusCode} </simple>
+                    </setHeader>
+                </otherwise>
+            </choice>
+            <log id="_log21" message="Response recived from Name API__${header.resultScore}"/>
+            <log id="_log22" message="Response recived from Name API__${body}"/>
+        </route>
+    </camelContext>
+</beans>
